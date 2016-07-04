@@ -140,7 +140,7 @@ getUserCorrection :: String -> [String] -> IO ()
 getUserCorrection word sugg = do
   printSuggestions sugg
   userCorrection <- getLine
-  if userCorrection `elem` sugg || sugg == []
+  if userCorrection `elem` sugg || null sugg
   then appendFile correctionFileName userCorrection
   else do 
     putStrLn "You chose a non-suggested word. [y/n]?"
@@ -156,56 +156,48 @@ suggestions :: Trie -> Int -> String -> [String]
 suggestions [] _ _ = []
 suggestions trie maxDist word
   = concatMap 
-    (go maxDist word []
+    (go []
         (take (length word + 1) $ iterate (+1) 0, [] )
     )
     trie
 
   where
-    go :: Int -> String -> String -> ([Int], [Int]) -> TrieNode 
+    go :: String -> ([Int], [Int]) -> TrieNode 
        -> [String]
-    go maxDist 
-       word
-       suggBuffer 
+    go suggBuffer 
        (vec1, vec2) 
        (Node (label, end) ts)
       | minimum vec > maxDist = []
       | end && last vec <= maxDist
         = (suggBuffer ++ [label])
           : concatMap
-            (go maxDist
-                word 
-                (suggBuffer ++ [label])
+            (go (suggBuffer ++ [label])
                 (vec, vec1)
             ) ts
       | otherwise 
         = concatMap  
-          (go maxDist 
-              word 
-              (suggBuffer ++ [label])
+          (go (suggBuffer ++ [label])
               (vec, vec1)
           ) ts
       where
         vec = length suggBuffer + 1
-              : calcVector word 
-                           label 
+              : calcVector label 
                            1
                            (length suggBuffer) -- not sure
                            (length suggBuffer + 1)
                            (vec1, vec2)
     
-    calcVector :: String -> Char -> Int -> Int -> Int -> ([Int], [Int])
+    calcVector :: Char -> Int -> Int -> Int -> ([Int], [Int])
                -> [Int]
-    calcVector word label pos vecNum last (vec1, vec2)
+    calcVector label pos vecNum lastX (vec1, vec2)
       | pos > length word = []
       | pos >= 2 && vecNum >= 2  
         = let x = minimum [ (vec1 !! (pos -1)) + costs (word !! (pos -1)) label
                           , (vec1 !! pos     ) + 1
-                          , last               + 1
+                          , lastX              + 1
                           , (vec2 !! (pos -2)) + 1
                           ]
-           in x : calcVector word
-                             label 
+           in x : calcVector label 
                              (pos + 1) 
                              vecNum 
                              x 
@@ -213,10 +205,9 @@ suggestions trie maxDist word
       | otherwise 
         = let x = minimum [ (vec1 !! (pos -1)) + costs (word !! (pos -1)) label
                           , (vec1 !! pos     ) + 1
-                          , last               + 1
+                          , lastX              + 1
                           ]
-           inx : calcVector word 
-                             label 
+           in x : calcVector label 
                              (pos + 1) 
                              vecNum 
                              x 
@@ -226,6 +217,3 @@ suggestions trie maxDist word
     costs w label
       | w == label = 0
       | otherwise  = 1
-      
-    makeTuple :: a -> (a, a)
-    makeTuple a = (a, a)
