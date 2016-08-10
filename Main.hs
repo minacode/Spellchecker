@@ -4,6 +4,7 @@ import Data.Char
 import Data.List hiding (insert)
 import Data.Function
 import Control.Monad
+import Text.Read
 import Debug.Trace
 
 type Trie = Forest (Char, Bool)
@@ -121,20 +122,18 @@ correct config trie word
           sugg = suggestions trie maxDist word
       traceShow maxDist $ getUserCorrection (outputFile config) word sugg
 
+-- | This is the maximum levensthein distance for suggested words.
+-- It allows one mistake, including swaps, per 5 Chars.
+maxCorrectionDistance :: Int -> String -> Int
+maxCorrectionDistance charsPerMistake w = 
+  (length w `div` charsPerMistake) + 1
+
 -- | This is the output function for suggestions.
 -- It basically prints a List of Strings in a more human readable way.
 printSuggestions :: [String] -> IO ()
 printSuggestions [] = putStrLn "[No suggestions. Please type in your own.]"
 printSuggestions sugg =
-  mapM_ (\ (n, x) -> putStrLn $ show n ++ " " ++ x)
-        $ zip [0..] 
-              ("[other]" : sugg)
-
--- | This is the maximum levensthein distance for suggested words.
--- It allows one mistake, including swaps, per 5 Chars.
-maxCorrectionDistance :: Int -> String -> Int
-maxCorrectionDistance charsPerMistake w = 
-  ((length w) `div` charsPerMistake) + 1
+  mapM_ (\ (n, x) -> putStrLn $ show n ++ " " ++ x) $ zip [1..] sugg
 
 {- | This function asks the user to correct a word
    by using a List of suggestions.
@@ -147,14 +146,21 @@ getUserCorrection :: String -> String -> [String] -> IO ()
 getUserCorrection outputFile word sugg = do
   printSuggestions sugg
   userCorrection <- getLine
-  if userCorrection `elem` sugg || null sugg
+  if null sugg
   then appendFile outputFile userCorrection
-  else do 
-    putStrLn "You chose a non-suggested word. [y/n]?"
-    a <- getLine
-    if a == "y"
-    then appendFile outputFile userCorrection
-    else getUserCorrection outputFile word sugg
+  else evaluateUserCorrection userCorrection
+  
+  where 
+    evaluateUserCorrection userCorrection =
+      case readMaybe userCorrection of
+        Nothing  -> appendFile outputFile userCorrection
+        (Just n) -> 
+          if n < length sugg
+          then appendFile outputFile (sugg !! n)
+          else do 
+            putStrLn "Try again."
+            userCorrection <- getLine
+            evaluateUserCorrection userCorrection
 
 {- | This function calculates all words in a Trie which
    levensthein distances are less or equal a given number.
