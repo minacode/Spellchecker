@@ -5,7 +5,6 @@ import Data.List hiding (insert)
 import Data.Function
 import Control.Monad
 import Text.Read
-import Debug.Trace
 
 type Trie = Forest (Char, Bool)
 type TrieNode = Tree (Char, Bool)
@@ -119,8 +118,8 @@ correct config trie word
   | otherwise = do
       putStrLn word
       let maxDist = maxCorrectionDistance (charsPerMistake config) word
-          sugg = suggestions trie maxDist word
-      traceShow maxDist $ getUserCorrection (outputFile config) word sugg
+          sugg    = suggestions trie maxDist word
+      getUserCorrection (outputFile config) word sugg
 
 -- | This is the maximum levensthein distance for suggested words.
 -- It allows one mistake, including swaps, per 5 Chars.
@@ -132,8 +131,8 @@ maxCorrectionDistance charsPerMistake w =
 -- It basically prints a List of Strings in a more human readable way.
 printSuggestions :: [String] -> IO ()
 printSuggestions [] = putStrLn "[No suggestions. Please type in your own.]"
-printSuggestions sugg =
-  mapM_ (\ (n, x) -> putStrLn $ show n ++ " " ++ x) $ zip [1..] sugg
+printSuggestions sugg 
+  = mapM_ (\ (n, x) -> putStrLn $ show n ++ " " ++ x) $ zip [1..] sugg
 
 {- | This function asks the user to correct a word
    by using a List of suggestions.
@@ -146,8 +145,8 @@ getUserCorrection :: String -> String -> [String] -> IO ()
 getUserCorrection outputFile word sugg = do
   printSuggestions sugg
   userCorrection <- getLine
-  if null sugg
-  then appendFile outputFile userCorrection
+  if   null sugg
+  then appendFile  outputFile userCorrection
   else evaluateUserCorrection userCorrection
   
   where 
@@ -155,8 +154,8 @@ getUserCorrection outputFile word sugg = do
       case readMaybe userCorrection of
         Nothing  -> appendFile outputFile userCorrection
         (Just n) -> 
-          if n < length sugg
-          then appendFile outputFile (sugg !! n)
+          if n <= length sugg
+          then appendFile outputFile (sugg !! (n - 1))
           else do 
             putStrLn "Try again."
             userCorrection <- getLine
@@ -168,54 +167,69 @@ getUserCorrection outputFile word sugg = do
 suggestions :: Trie -> Int -> String -> [String]
 suggestions [] _ _ = []
 suggestions trie maxDist word
-  = traceShow maxDist $ concatMap 
-      (go []
-          (take (length word + 1) $ iterate (+1) 0, [] )
-      )
-      trie
+  = let vec1 = [0 .. (length word)]
+     in concatMap (go [] vec1 [] 'x' ) trie
 
   where
-    go :: String -> ([Int], [Int]) -> TrieNode -> [String]
-    go suggBuffer (vec1, vec2) (Node (label, end) ts)
-      | minimum vec > maxDist = []
-      | end && last vec <= maxDist
-        = (suggBuffer ++ [label])
-          : concatMap
-            (go (suggBuffer ++ [label])
-                (vec, vec1)
-            ) ts
+    go :: String -> [Int] -> [Int] -> Char -> TrieNode -> [String]
+    go suggBuffer newVec vec1 prevLabel (Node (label, end) ts)
+      | minimum newVec >= maxDist = []
+      | end && last newVec <= maxDist
+        = let newBuffer = suggBuffer ++ [label]
+              vec = calcVector label 
+                               prevLabel 
+                               newVec 
+                               vec1 
+                               (length newBuffer)
+           in newBuffer : concatMap
+                (go newBuffer
+                    vec
+                    newVec
+                    label
+                ) ts
       | otherwise 
-        = concatMap
-          (go (suggBuffer ++ [label])
-              (vec, vec1)
-          ) ts
-      where
-        vec = length suggBuffer + 1
-              : calcVector label
-                           1
-                           (length suggBuffer)
-                           (length suggBuffer + 1)
-                           (vec1, vec2)
+        = let newBuffer = suggBuffer ++ [label]
+              vec = calcVector label 
+                               prevLabel
+                               newVec 
+                               vec1 
+                               (length newBuffer)
+           in concatMap
+                (go newBuffer
+                    vec
+                    newVec
+                    label
+                ) ts
     
-    calcVector :: Char -> Int -> Int -> Int -> ([Int], [Int]) -> [Int]
-    calcVector label pos vecNum lastMin (vec1, vec2)
-      | pos > length word = []
-      | otherwise
-        = let values' = [ (vec1 !! (pos -1)) + costs (word !! (pos -1)) label
-                        , (vec1 !! pos     ) + 1
-                        , lastMin            + 1
-                        ]
-              values = if pos >= 2 && vecNum >= 2
-                       then (vec2 !! (pos -2)) + 1 : values'
-                       else values'
-              newMin = minimum values
-           in newMin : calcVector label 
-                                  (pos + 1) 
-                                  vecNum 
-                                  newMin 
-                                  (vec1, vec2)
-      
-    costs :: Char -> Char -> Int
-    costs w label
-      | w == label = 0
-      | otherwise  = 1
+    calcVector :: Char -> Char -> [Int] -> [Int] -> Int -> [Int]
+    calcVector label prevLabel vec1 vec2 vecNum
+      = take (length word + 1)
+             (map snd $ iterate calcValue (1, vecNum))
+        
+      where
+        calcValue :: (Int, Int) -> (Int, Int)
+        calcValue a@(pos, lastValue)
+          = ( pos + 1, minimum (getValues a))
+            
+        getValues :: (Int, Int) -> [Int]
+        getValues (pos, lastValue)
+          | pos       >= 2                   && 
+            vecNum    >= 2                   && 
+            label     == (word !! (pos - 2)) &&
+            prevLabel == (word !! (pos - 1))
+              = [ (vec1 !! pos)       + 1
+                , (vec1 !! (pos - 1)) + costs (word !! (pos - 1)) label
+                , lastValue           + 1
+                , (vec2 !! (pos - 2)) + 1
+                ]
+          | otherwise 
+              = [ (vec1 !! pos)       + 1
+                , (vec1 !! (pos - 1)) + costs (word !! (pos - 1)) label
+                , lastValue           + 1
+                ]
+          
+        costs :: Char -> Char -> Int
+        costs w label
+          | w == label = 0
+          | otherwise  = 1
+    
