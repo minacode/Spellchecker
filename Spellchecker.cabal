@@ -3,9 +3,9 @@
 
 name:                Spellchecker
 version:             0.1.0.0
-synopsis:            A Spellchecker.
+-- synopsis:            
 -- description:         
-license:             GPL-3
+-- license:             
 license-file:        LICENSE
 author:              Max Friedrich
 maintainer:          max.friedrich@tu-dresden.de
